@@ -1,0 +1,107 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  labels:
+    k8s-app: fluentd-vrlicloud-logging
+  name: fluentd-vrlicloud-logging
+  namespace: vmware-system-vrlic
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: fluentd-vrlicloud-clusterrole
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - "namespaces"
+      - "pods"
+    verbs:
+      - "list"
+      - "get"
+      - "watch"
+---    
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: fluentd-vrlicloud-clusterrole
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: fluentd-vrlicloud-clusterrole
+subjects:
+- kind: ServiceAccount
+  name: fluentd-vrlicloud-logging
+  namespace: vmware-system-vrlic
+---  
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fluentd-lint-logging
+  namespace: vmware-system-vrlic
+  labels:
+    k8s-app: fluentd-vrlicloud-logging
+    app: fluentd-vrlicloud-logging
+    version: v1
+    kubernetes.io/cluster-service: "true"
+spec:
+ selector:
+   matchLabels:
+     name: fluentd-vrlicloud-logging
+ replicas: 2
+ template:
+   metadata:
+     labels:
+       name: fluentd-vrlicloud-logging
+       app: fluentd-vrlicloud-logging
+       version: v1
+       kubernetes.io/cluster-service: "true"
+   spec:
+     serviceAccount: fluentd-vrlicloud-logging
+     serviceAccountName: fluentd-vrlicloud-logging
+     tolerations:
+     - key: node-role.kubernetes.io/master
+       effect: NoSchedule
+     containers:
+     - name: fluentd-vrlicloud
+       image: docker.io/vmware/log-intelligence-fluentd
+       command: ["fluentd"]
+       env:
+       - name: FLUENTD_ARGS
+         value: --no-supervisor -q
+       ports:
+       - name: fluentd-tcp
+         containerPort: 24224
+       - name: fluentd-udp
+         containerPort: 24224         
+       resources:
+         limits:
+           memory: 500Mi
+         requests:
+           cpu: 100m
+           memory: 200Mi     
+       volumeMounts:
+       - name: config-volume
+         mountPath: /etc/fluent
+     volumes:
+     - name: config-volume
+       configMap:
+         name: vrlicloud-fluent-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fluentd-vrlicloud-logging
+  namespace: vmware-system-vrlic
+spec:
+  selector:
+    app: fluentd-vrlicloud-logging
+  ports:
+    - protocol: TCP
+      port: 24224
+      name: fluentd-tcp 
+      targetPort: 24224
+    - protocol: UDP
+      port: 24224
+      name: fluentd-udp
+      targetPort: 24224
